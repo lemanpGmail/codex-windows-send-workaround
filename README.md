@@ -4,6 +4,16 @@
 
 **Français :** contournement du deuxième message bloqué, bouton Envoyer grisé ou cercle qui tourne dans Codex Windows. [Instructions en français](#français).
 
+
+## v0.2.0 — Startup handling (2026-09-24)
+
+- Repeated clicks while a launcher is already running in the same extracted folder are ignored using a local `launcher.lock` file. The lock is removed on normal completion; a lock belonging to an exited process is recovered on the next launch.
+- After a successful retry, the Codex window is shown, restored if minimized, and focused.
+- **Click once and allow about 10 seconds.** The eight-second startup wait remains intentional. A second launch is not required to apply the retry.
+- Checks: JavaScript syntax and duplicate-launch prevention passed. The window activation change has not yet been validated through a fresh end-to-end Windows startup; this is not a confirmed fix for every white-window occurrence.
+- If interrupted and a lock persists, fully quit Codex and any still-running workaround launcher before removing `launcher.lock` from this workaround folder.
+
+**Français :** cette version ignore les doubles lancements depuis le même dossier et affiche Codex après la réparation. Cliquez une fois et attendez environ 10 secondes. Le test anti-double-lancement est passé ; la disparition de toute fenêtre blanche reste à confirmer sur un démarrage complet. En cas de verrou persistant après interruption, quittez Codex et le lanceur avant de supprimer `launcher.lock` dans ce dossier.
 ## Scope and validation
 
 - Diagnosed package: **OpenAI.Codex 26.917.8451.0**, internal version **26.917.62051**.
@@ -105,3 +115,4 @@ Pour signaler un résultat, précisez les versions et si les deux réponses arri
 ---
 
 Community workaround, not affiliated with or endorsed by OpenAI. MIT license.
+

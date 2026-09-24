@@ -1,5 +1,5 @@
-﻿import {spawn,execFileSync} from 'node:child_process';
-import {readFile,appendFile,access} from 'node:fs/promises';
+import {spawn,execFileSync} from 'node:child_process';
+import {readFile,appendFile,access,open,unlink} from 'node:fs/promises';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const folder=dirname(fileURLToPath(import.meta.url));
@@ -7,7 +7,7 @@ const logPath=join(folder,'launcher.log');
 const port=49372;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const log=async value=>appendFile(logPath,new Date().toISOString()+' '+JSON.stringify(value)+'\n');
-let ws,sequence=0,ownedInspector=false;const pending=new Map();
+const lockPath=join(folder,'launcher.lock'); let launchLock; let ws,sequence=0,ownedInspector=false;const pending=new Map();
 const rpc=(method,params={})=>new Promise((resolve,reject)=>{
   const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error('Diagnostic timeout: '+method))},60000);
   pending.set(id,a=>{clearTimeout(timer);a.error?reject(Error(JSON.stringify(a.error))):resolve(a.result)});
@@ -20,6 +20,18 @@ const evaluate=async expression=>{
 };
 const inView=source=>evaluate(`(async()=>{const E=process.mainModule.require('electron');const w=E.BrowserWindow.getAllWindows().find(w=>w.webContents.getURL()==='app://-/index.html');if(!w)return {ready:false,reason:'no-primary-window'};return await w.webContents.executeJavaScript(${JSON.stringify(source)},true);})()`);
 try{
+  for(let attempt=0;attempt<2;attempt++){
+    try{launchLock=await open(lockPath,'wx');await launchLock.writeFile(String(process.pid));break;}
+    catch(error){
+      if(error.code!=='EEXIST')throw error;
+      const owner=Number(await readFile(lockPath,'utf8'));
+      if(!Number.isInteger(owner)||owner<=0){await log({event:'launch-in-progress'});process.exit(0);}
+      let active=true;try{process.kill(owner,0);}catch(check){if(check.code==='ESRCH')active=false;else throw check;}
+      if(active){await log({event:'duplicate-launch-ignored'});process.exit(0);}
+      await unlink(lockPath);
+    }
+  }
+  if(!launchLock)throw Error('Unable to acquire launcher lock');
   const packageDir=execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command','Get-AppxPackage -Name OpenAI.Codex | Select-Object -First 1 -ExpandProperty InstallLocation'],{encoding:'utf8',windowsHide:true}).trim();
   if(!packageDir)throw Error('Paquet OpenAI.Codex introuvable.');
   const executable=join(packageDir,'app','ChatGPT.exe');await access(executable);
@@ -48,6 +60,7 @@ try{
   }
   await log({event:'local-path-query-retry',outcome});
   if(!outcome?.ready)throw Error('Le chargement local n’a pas pu être rétabli. Voir launcher.log.');
+  await evaluate("(()=>{const E=process.mainModule.require('electron');const w=E.BrowserWindow.getAllWindows().find(w=>w.webContents.getURL()==='app://-/index.html');if(w){if(w.isMinimized())w.restore();w.show();w.focus();}return Boolean(w);})()");
   await log({event:'ready',pid:identity.pid});
 }catch(error){
   await log({event:'error',message:String(error)});process.exitCode=1;
@@ -57,5 +70,7 @@ try{
     ws.close();
   }
   else if(ws?.readyState===WebSocket.OPEN)ws.close();
+  if(launchLock){await launchLock.close();await unlink(lockPath).catch(()=>{});}
 }
+
 
